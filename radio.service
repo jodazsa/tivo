@@ -1,0 +1,39 @@
+[Unit]
+Description=Pi Radio Controller
+After=mpd.service sound.target
+Wants=mpd.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=notify
+ExecStart=/opt/radio-venv/bin/python3 /usr/local/bin/radio.py
+Restart=always
+RestartSec=5
+User=root
+
+# Graceful shutdown: give the process time to save state
+TimeoutStopSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Systemd watchdog: restart if the process stops responding
+WatchdogSec=30
+
+# Log to journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=radio
+
+# Resource limits to prevent runaway processes
+MemoryMax=128M
+CPUQuota=50%
+
+# Filesystem hardening
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
