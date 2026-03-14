@@ -105,7 +105,7 @@ echo "→ Applying power loss resilience hardening..."
 # 9a. Enable hardware watchdog
 # The bcm2835_wdt module resets the Pi if the system hangs
 echo "→ Enabling hardware watchdog..."
-if ! grep -q "dtparam=watchdog=on" "$CONFIG_FILE" 2>/dev/null; then
+if [ -n "$CONFIG_FILE" ] && ! grep -q "dtparam=watchdog=on" "$CONFIG_FILE" 2>/dev/null; then
     echo "dtparam=watchdog=on" | sudo tee -a "$CONFIG_FILE"
 fi
 
