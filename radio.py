@@ -679,14 +679,14 @@ def main():
                                  cur_station_index + 1, new_station_index + 1, raw_station_pos)
                         cur_station_index = new_station_index
 
-                        # Play new station
-                        if play_enabled and num_stations > 0:
-                            if cur_station_index != playing_station_index:
-                                play_station(stations_list[cur_station_index])
-                                playing_station_index = cur_station_index
-                                watchdog_stop_since = 0.0
-                                state_dirty = True
-                        display_dirty = True
+                    # Play new station if it differs from what's currently playing
+                    if play_enabled and num_stations > 0:
+                        if cur_station_index != playing_station_index:
+                            play_station(stations_list[cur_station_index])
+                            playing_station_index = cur_station_index
+                            watchdog_stop_since = 0.0
+                            state_dirty = True
+                    display_dirty = True
 
             # ── Stop/start switch ──
             new_play = GPIO.input(STOP_START_PIN) == GPIO.HIGH
