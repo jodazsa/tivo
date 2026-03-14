@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Simplified Raspberry Pi radio controller.
+"""Raspberry Pi radio controller with OLED display.
 
 Single script that handles:
-- BCD rotary switches for bank/station selection
-- I2C volume encoder (Adafruit Seesaw)
+- BCD rotary switch for volume control (10 positions)
+- BCD rotary switch for station selection (wraps through flat list)
 - Stop/start toggle switch
+- 128x32 I2C OLED display (station name + volume)
 - MPD playback via mpc commands
 - Stream watchdog (auto-restarts dead streams)
 - State persistence across power loss
@@ -27,8 +28,9 @@ import board
 import busio
 import RPi.GPIO as GPIO
 import yaml
-from adafruit_seesaw.seesaw import Seesaw
-from adafruit_seesaw.rotaryio import IncrementalEncoder
+from PIL import Image, ImageDraw, ImageFont
+
+import adafruit_ssd1306
 
 # ── Paths ──────────────────────────────────────────────────
 STATIONS_PATH = Path("/home/radio/stations.yaml")
@@ -40,27 +42,42 @@ STATE_BACKUP_PATH = Path("/home/radio/state.backup.json")
 # ── Hardware pin mappings ──────────────────────────────────
 # Station BCD switch
 STATION_PINS = {"bit0": 9, "bit1": 10, "bit2": 22, "bit3": 17}
-# Bank BCD switch
-BANK_PINS = {"bit0": 13, "bit1": 6, "bit2": 5, "bit3": 11}
+# Volume BCD switch (was bank switch)
+VOLUME_PINS = {"bit0": 13, "bit1": 6, "bit2": 5, "bit3": 11}
 # Stop/start toggle switch
 STOP_START_PIN = 24
-# Volume encoder I2C address and Seesaw button pin
-VOLUME_I2C_ADDR = 0x36
-SEESAW_BUTTON_PIN = 24
+# OLED display I2C address (Adafruit 4440, SSD1306 128x32)
+OLED_I2C_ADDR = 0x3D
+OLED_WIDTH = 128
+OLED_HEIGHT = 32
+
+# ── Volume mapping ────────────────────────────────────────
+# BCD positions 0-9 map evenly from 30 to 100
+VOLUME_MIN = 30
+VOLUME_MAX = 100
+DEFAULT_VOLUME = 62  # Position 4
+
+
+def bcd_to_volume(pos):
+    """Convert BCD switch position (0-9) to volume level (30-100)."""
+    pos = max(0, min(9, pos))
+    if pos == 9:
+        return VOLUME_MAX
+    return VOLUME_MIN + round(pos * (VOLUME_MAX - VOLUME_MIN) / 9)
+
+
+# Pre-compute the volume table: [30, 38, 46, 54, 62, 70, 78, 86, 93, 100]
+VOLUME_TABLE = [bcd_to_volume(i) for i in range(10)]
 
 # ── Tuning ─────────────────────────────────────────────────
 POLL_INTERVAL = 0.1       # Main loop sleep (seconds)
 DEBOUNCE_TIME = 0.15      # Ignore switch changes faster than this
-VOLUME_STEP = 4           # Volume change per encoder click
-MAX_VOLUME_DELTA = 4      # Ignore encoder jumps larger than this (I2C glitch guard)
-VOLUME_MIN = 0
-VOLUME_MAX = 100
-DEFAULT_VOLUME = 60
 WATCHDOG_INTERVAL = 10.0  # Seconds between stream health checks
 WATCHDOG_GRACE = 15.0     # Wait this long before restarting a dead stream
 STATE_SAVE_INTERVAL = 5.0 # Seconds between state file writes
 CONFIG_CHECK_INTERVAL = 30.0  # Seconds between stations.yaml mtime checks
 WATCHDOG_NOTIFY_INTERVAL = 10.0  # Seconds between systemd watchdog keepalives
+DISPLAY_UPDATE_INTERVAL = 0.5  # Seconds between OLED display refreshes
 
 # ── Logging ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -146,12 +163,11 @@ def _atomic_write_json(path: Path, payload: dict):
         raise
 
 
-def save_state(volume, bank, station):
+def save_state(volume, station_index):
     """Atomically save state to disk and rotate a backup copy."""
     state = {
         "volume": volume,
-        "bank": bank,
-        "station": station,
+        "station": station_index,
         "timestamp": int(time.time()),
     }
     try:
@@ -167,19 +183,17 @@ def _validate_state(data):
         return None
 
     volume = data.get("volume")
-    bank = data.get("bank")
     station = data.get("station")
-    if not all(isinstance(v, int) for v in (volume, bank, station)):
+    if not all(isinstance(v, int) for v in (volume, station)):
         return None
 
     if not (VOLUME_MIN <= volume <= VOLUME_MAX):
         return None
-    if not (-1 <= bank <= 9 and -1 <= station <= 9):
+    if station < 0:
         return None
 
     return {
         "volume": volume,
-        "bank": bank,
         "station": station,
         "timestamp": data.get("timestamp"),
     }
@@ -195,10 +209,9 @@ def load_state():
                 data = json.load(f)
             validated = _validate_state(data)
             if validated:
-                log.info("Restored state from %s: volume=%d bank=%d station=%d",
+                log.info("Restored state from %s: volume=%d station=%d",
                          path.name,
                          validated["volume"],
-                         validated["bank"],
                          validated["station"])
                 return validated
             log.warning("Invalid state data in %s", path)
@@ -234,29 +247,70 @@ def read_bcd(pins: dict) -> int:
 
 
 def load_stations():
-    """Load and return stations.yaml as a dict."""
+    """Load stations.yaml and return flat list of station dicts."""
     if not STATIONS_PATH.exists():
         log.error("stations.yaml not found at %s", STATIONS_PATH)
-        return {}
+        return []
     with open(STATIONS_PATH) as f:
-        return yaml.safe_load(f) or {}
-
-
-def get_station(data, bank_id, station_id):
-    """Look up a station entry. Returns (bank_dict, station_dict) or (None, None)."""
-    banks = data.get("banks", {})
-    bank = banks.get(bank_id)
-    if not isinstance(bank, dict):
-        return None, None
-    stations = bank.get("stations", {})
-    station = stations.get(station_id)
-    if not isinstance(station, dict):
-        return None, None
-    return bank, station
+        data = yaml.safe_load(f) or {}
+    stations = data.get("stations", [])
+    if not isinstance(stations, list):
+        log.error("stations.yaml 'stations' key must be a list")
+        return []
+    return stations
 
 
 def clamp(val, lo, hi):
     return max(lo, min(hi, val))
+
+
+# ── OLED Display ──────────────────────────────────────────
+
+def init_display(i2c):
+    """Initialize the SSD1306 128x32 OLED display."""
+    try:
+        display = adafruit_ssd1306.SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c, addr=OLED_I2C_ADDR)
+        display.fill(0)
+        display.show()
+        log.info("OLED display ready at 0x%02x", OLED_I2C_ADDR)
+        return display
+    except Exception as e:
+        log.error("OLED init failed: %s", e)
+        return None
+
+
+def update_display(display, station_index, station_name, volume, play_enabled):
+    """Update the OLED display with station and volume info."""
+    if display is None:
+        return
+    try:
+        image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT))
+        draw = ImageDraw.Draw(image)
+
+        # Use default font
+        font = ImageFont.load_default()
+
+        # Line 1: Station number
+        station_num_str = f"Station {station_index + 1}"
+        draw.text((0, 0), station_num_str, font=font, fill=255)
+
+        # Line 2: Station name (truncated if needed)
+        if station_name:
+            # Truncate long names to fit ~21 chars at default font size
+            display_name = station_name[:21]
+        else:
+            display_name = "---"
+        draw.text((0, 11), display_name, font=font, fill=255)
+
+        # Line 3: Volume + play state
+        state_str = "PLAY" if play_enabled else "STOP"
+        vol_str = f"Vol: {volume}%  {state_str}"
+        draw.text((0, 22), vol_str, font=font, fill=255)
+
+        display.image(image)
+        display.show()
+    except Exception as e:
+        log.warning("Display update failed: %s", e)
 
 
 # ── Playback ───────────────────────────────────────────────
@@ -400,14 +454,12 @@ def _wait_for_playing(timeout=2.0):
     return False
 
 
-def play_station(data, bank_id, station_id):
-    """Play a station by bank/station ID. Returns True if successful."""
-    bank, station = get_station(data, bank_id, station_id)
-    if station is None:
-        log.warning("Station not found: bank=%d station=%d", bank_id, station_id)
+def play_station(station):
+    """Play a station from the flat list. Returns True if successful."""
+    if not isinstance(station, dict):
         return False
 
-    name = station.get("name", f"Bank {bank_id} / Station {station_id}")
+    name = station.get("name", "Unknown")
     stype = station.get("type", "").strip().lower()
     log.info("▶ %s [%s]", name, stype)
 
@@ -477,64 +529,70 @@ def main():
     GPIO.setwarnings(False)
     all_pins = (
         list(STATION_PINS.values())
-        + list(BANK_PINS.values())
+        + list(VOLUME_PINS.values())
         + [STOP_START_PIN]
     )
     for pin in all_pins:
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-    # ── I2C / volume encoder setup ──
+    # ── I2C / OLED display setup ──
     try:
         i2c = busio.I2C(board.SCL, board.SDA)
-        seesaw = Seesaw(i2c, addr=VOLUME_I2C_ADDR)
-        seesaw.pin_mode(SEESAW_BUTTON_PIN, seesaw.INPUT_PULLUP)
-        vol_encoder = IncrementalEncoder(seesaw, 0)
-        last_vol_pos = vol_encoder.position
-        resync_volume_encoder = False
-        last_button = seesaw.digital_read(SEESAW_BUTTON_PIN)
-        log.info("Volume encoder ready at 0x%02x", VOLUME_I2C_ADDR)
     except Exception as e:
         log.error("I2C init failed: %s", e)
         sys.exit(1)
 
+    display = init_display(i2c)
+
     # ── Load saved state (survives power loss) ──
     saved_state = load_state()
 
-    # ── Load stations and read initial state ──
-    stations_data = load_stations()
+    # ── Load stations ──
+    stations_list = load_stations()
     stations_mtime = STATIONS_PATH.stat().st_mtime if STATIONS_PATH.exists() else 0
+    num_stations = len(stations_list)
 
-    cur_bank = read_bcd(BANK_PINS)
-    cur_station = read_bcd(STATION_PINS)
-    if cur_bank > 9: cur_bank = 0
-    if cur_station > 9: cur_station = 0
+    if num_stations == 0:
+        log.error("No stations loaded — check stations.yaml")
+        sys.exit(1)
 
-    playing_bank = -1
-    playing_station = -1
+    log.info("Loaded %d stations", num_stations)
+
+    # ── Read initial switch positions ──
+    cur_volume_pos = read_bcd(VOLUME_PINS)
+    if cur_volume_pos > 9:
+        cur_volume_pos = 0
+    volume = VOLUME_TABLE[cur_volume_pos]
+
+    raw_station_pos = read_bcd(STATION_PINS)
+    if raw_station_pos > 9:
+        raw_station_pos = 0
+
+    # Station index into the flat list — wraps using modulo
+    cur_station_index = raw_station_pos % num_stations
+
+    playing_station_index = -1
     play_enabled = GPIO.input(STOP_START_PIN) == GPIO.HIGH
-    last_switch_change = 0.0
-
-    # Restore volume from saved state, or use default
-    if saved_state and 0 <= saved_state.get("volume", -1) <= VOLUME_MAX:
-        volume = saved_state["volume"]
-        log.info("Restored volume: %d", volume)
-    else:
-        volume = DEFAULT_VOLUME
+    last_station_switch_change = 0.0
+    last_volume_switch_change = 0.0
 
     # Set initial volume
     mpc("volume", str(volume))
 
     # Play initial station
-    if play_enabled and get_station(stations_data, cur_bank, cur_station)[1]:
-        play_station(stations_data, cur_bank, cur_station)
-        playing_bank = cur_bank
-        playing_station = cur_station
+    if play_enabled and num_stations > 0:
+        play_station(stations_list[cur_station_index])
+        playing_station_index = cur_station_index
     elif not play_enabled:
         log.info("Stop/start switch is OFF at startup — stopped")
         mpc("stop")
 
-    log.info("Initial: bank=%d station=%d volume=%d play=%s",
-             cur_bank, cur_station, volume, play_enabled)
+    log.info("Initial: station=%d/%d volume=%d (pos %d) play=%s",
+             cur_station_index + 1, num_stations, volume, cur_volume_pos, play_enabled)
+
+    # Update display with initial state
+    station_name = stations_list[cur_station_index].get("name", "Unknown") if num_stations > 0 else "---"
+    update_display(display, cur_station_index, station_name, volume, play_enabled)
 
     # ── Watchdog state ──
     watchdog_last_check = 0.0
@@ -549,6 +607,10 @@ def main():
 
     # ── Systemd watchdog notify tracking ──
     last_watchdog_notify = 0.0
+
+    # ── Display update tracking ──
+    last_display_update = 0.0
+    display_dirty = False
 
     # Tell systemd we're ready
     _notify_ready()
@@ -565,79 +627,55 @@ def main():
                 try:
                     mt = STATIONS_PATH.stat().st_mtime
                     if mt != stations_mtime:
-                        stations_data = load_stations()
+                        stations_list = load_stations()
+                        num_stations = len(stations_list)
                         stations_mtime = mt
-                        log.info("Reloaded stations.yaml")
+                        log.info("Reloaded stations.yaml (%d stations)", num_stations)
                         mpc("update")
+                        # Clamp station index to new list size
+                        if num_stations > 0:
+                            cur_station_index = cur_station_index % num_stations
+                        display_dirty = True
                 except FileNotFoundError:
                     pass
 
-            # ── Read BCD switches ──
-            raw_bank = read_bcd(BANK_PINS)
+            # ── Read volume BCD switch ──
+            raw_vol = read_bcd(VOLUME_PINS)
+            new_vol_pos = raw_vol if 0 <= raw_vol <= 9 else cur_volume_pos
+
+            if new_vol_pos != cur_volume_pos:
+                if now - last_volume_switch_change >= DEBOUNCE_TIME:
+                    last_volume_switch_change = now
+                    cur_volume_pos = new_vol_pos
+                    volume = VOLUME_TABLE[cur_volume_pos]
+                    mpc("volume", str(volume))
+                    log.info("Volume: pos %d → %d%%", cur_volume_pos, volume)
+                    state_dirty = True
+                    display_dirty = True
+
+            # ── Read station BCD switch ──
             raw_station = read_bcd(STATION_PINS)
-            new_bank = raw_bank if 0 <= raw_bank <= 9 else cur_bank
-            new_station = raw_station if 0 <= raw_station <= 9 else cur_station
+            new_station_pos = raw_station if 0 <= raw_station <= 9 else raw_station_pos
 
-            # ── Switch change (with debounce) ──
-            if (new_bank != cur_bank or new_station != cur_station):
-                if now - last_switch_change >= DEBOUNCE_TIME:
-                    last_switch_change = now
+            if new_station_pos != raw_station_pos:
+                if now - last_station_switch_change >= DEBOUNCE_TIME:
+                    last_station_switch_change = now
+                    raw_station_pos = new_station_pos
 
-                    if new_bank != cur_bank:
-                        log.info("Bank: %d → %d", cur_bank, new_bank)
-                    if new_station != cur_station:
-                        log.info("Station: %d → %d", cur_station, new_station)
+                    new_station_index = raw_station_pos % num_stations if num_stations > 0 else 0
+                    if new_station_index != cur_station_index:
+                        log.info("Station: %d → %d (knob pos %d)",
+                                 cur_station_index + 1, new_station_index + 1, raw_station_pos)
+                        cur_station_index = new_station_index
 
-                    cur_bank = new_bank
-                    cur_station = new_station
-
-                    # Play new station
-                    if get_station(stations_data, cur_bank, cur_station)[1]:
-                        if cur_bank != playing_bank or cur_station != playing_station:
-                            play_station(stations_data, cur_bank, cur_station)
-                            playing_bank = cur_bank
-                            playing_station = cur_station
-                            watchdog_stop_since = 0.0
-                            state_dirty = True
-                    else:
-                        log.warning("No station at bank=%d station=%d", cur_bank, cur_station)
-
-            # ── Volume encoder ──
-            try:
-                vol_pos = vol_encoder.position
-            except OSError:
-                vol_pos = last_vol_pos
-                resync_volume_encoder = True
-                time.sleep(0.1)
-
-            if vol_pos != last_vol_pos:
-                if resync_volume_encoder:
-                    log.warning("Volume encoder recovered after I2C error; resyncing position")
-                    last_vol_pos = vol_pos
-                    resync_volume_encoder = False
-                else:
-                    delta = last_vol_pos - vol_pos
-                    last_vol_pos = vol_pos
-                    if abs(delta) > MAX_VOLUME_DELTA:
-                        log.warning(
-                            "Ignoring suspicious volume encoder jump: %d steps",
-                            delta,
-                        )
-                    else:
-                        volume = clamp(volume + delta * VOLUME_STEP, VOLUME_MIN, VOLUME_MAX)
-                        mpc("volume", str(volume))
-                        log.debug("Volume: %d", volume)
-                        state_dirty = True
-
-            # ── Encoder button (play/pause toggle) ──
-            try:
-                btn = seesaw.digital_read(SEESAW_BUTTON_PIN)
-                if last_button == 1 and btn == 0:  # Falling edge
-                    log.info("Encoder button pressed → toggle play/pause")
-                    mpc("toggle")
-                last_button = btn
-            except OSError:
-                pass
+                        # Play new station
+                        if play_enabled and num_stations > 0:
+                            if cur_station_index != playing_station_index:
+                                play_station(stations_list[cur_station_index])
+                                playing_station_index = cur_station_index
+                                watchdog_stop_since = 0.0
+                                state_dirty = True
+                        display_dirty = True
 
             # ── Stop/start switch ──
             new_play = GPIO.input(STOP_START_PIN) == GPIO.HIGH
@@ -645,35 +683,46 @@ def main():
                 play_enabled = new_play
                 if play_enabled:
                     log.info("Stop/start switch → ON")
-                    if get_station(stations_data, cur_bank, cur_station)[1]:
-                        play_station(stations_data, cur_bank, cur_station)
-                        playing_bank = cur_bank
-                        playing_station = cur_station
+                    if num_stations > 0:
+                        play_station(stations_list[cur_station_index])
+                        playing_station_index = cur_station_index
                 else:
                     log.info("Stop/start switch → OFF")
                     mpc("stop")
+                display_dirty = True
 
             # ── Stream watchdog ──
             if play_enabled and now - watchdog_last_check >= WATCHDOG_INTERVAL:
                 watchdog_last_check = now
-                _, stn = get_station(stations_data, playing_bank, playing_station)
-                if stn and stn.get("type", "").strip().lower() == "stream":
-                    status = mpc("status")
-                    if "[playing]" not in status and "[paused]" not in status:
-                        if watchdog_stop_since == 0.0:
-                            watchdog_stop_since = now
-                            log.warning("Stream appears stopped, waiting %.0fs...", WATCHDOG_GRACE)
-                        elif now - watchdog_stop_since >= WATCHDOG_GRACE:
-                            log.info("Watchdog: restarting stream (bank=%d station=%d)",
-                                     playing_bank, playing_station)
-                            play_station(stations_data, playing_bank, playing_station)
+                if 0 <= playing_station_index < num_stations:
+                    stn = stations_list[playing_station_index]
+                    if stn.get("type", "").strip().lower() == "stream":
+                        status = mpc("status")
+                        if "[playing]" not in status and "[paused]" not in status:
+                            if watchdog_stop_since == 0.0:
+                                watchdog_stop_since = now
+                                log.warning("Stream appears stopped, waiting %.0fs...", WATCHDOG_GRACE)
+                            elif now - watchdog_stop_since >= WATCHDOG_GRACE:
+                                log.info("Watchdog: restarting stream (station %d)",
+                                         playing_station_index + 1)
+                                play_station(stations_list[playing_station_index])
+                                watchdog_stop_since = 0.0
+                        else:
                             watchdog_stop_since = 0.0
-                    else:
-                        watchdog_stop_since = 0.0
+
+            # ── Update OLED display (throttled, only when changed) ──
+            if display_dirty and now - last_display_update >= DISPLAY_UPDATE_INTERVAL:
+                if num_stations > 0:
+                    stn_name = stations_list[cur_station_index].get("name", "Unknown")
+                else:
+                    stn_name = "---"
+                update_display(display, cur_station_index, stn_name, volume, play_enabled)
+                last_display_update = now
+                display_dirty = False
 
             # ── Save state to disk (throttled, only when changed) ──
             if state_dirty and now - last_state_save >= STATE_SAVE_INTERVAL:
-                save_state(volume, playing_bank, playing_station)
+                save_state(volume, playing_station_index)
                 last_state_save = now
                 state_dirty = False
 
@@ -690,7 +739,13 @@ def main():
 
     # ── Graceful shutdown ──
     log.info("Shutting down gracefully")
-    save_state(volume, playing_bank, playing_station)
+    save_state(volume, playing_station_index)
+    if display:
+        try:
+            display.fill(0)
+            display.show()
+        except Exception:
+            pass
     GPIO.cleanup()
 
 
