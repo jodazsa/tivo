@@ -52,22 +52,10 @@ OLED_WIDTH = 128
 OLED_HEIGHT = 32
 
 # ── Volume mapping ────────────────────────────────────────
-# BCD positions 0-9 map evenly from 30 to 100
 VOLUME_MIN = 30
 VOLUME_MAX = 100
-DEFAULT_VOLUME = 62  # Position 4
-
-
-def bcd_to_volume(pos):
-    """Convert BCD switch position (0-9) to volume level (30-100)."""
-    pos = max(0, min(9, pos))
-    if pos == 9:
-        return VOLUME_MAX
-    return VOLUME_MIN + round(pos * (VOLUME_MAX - VOLUME_MIN) / 9)
-
-
-# Pre-compute the volume table: [30, 38, 46, 54, 62, 70, 78, 86, 93, 100]
-VOLUME_TABLE = [bcd_to_volume(i) for i in range(10)]
+DEFAULT_VOLUME = 62
+VOLUME_STEP = 5  # Each knob position change increments/decrements by this amount
 
 # ── Tuning ─────────────────────────────────────────────────
 POLL_INTERVAL = 0.1       # Main loop sleep (seconds)
@@ -583,7 +571,7 @@ def main():
             log.info("Restored volume %d%% from saved state", saved_volume)
 
     playing_station_index = -1
-    play_enabled = GPIO.input(STOP_START_PIN) == GPIO.HIGH
+    play_enabled = GPIO.input(STOP_START_PIN) == GPIO.LOW
     last_station_switch_change = 0.0
     last_volume_switch_change = 0.0
 
@@ -657,10 +645,11 @@ def main():
             if new_vol_pos != cur_volume_pos:
                 if now - last_volume_switch_change >= DEBOUNCE_TIME:
                     last_volume_switch_change = now
+                    delta = new_vol_pos - cur_volume_pos
                     cur_volume_pos = new_vol_pos
-                    volume = VOLUME_TABLE[cur_volume_pos]
+                    volume = max(VOLUME_MIN, min(VOLUME_MAX, volume + delta * VOLUME_STEP))
                     mpc("volume", str(volume))
-                    log.info("Volume: pos %d → %d%%", cur_volume_pos, volume)
+                    log.info("Volume: pos %d → %d%% (step %+d)", cur_volume_pos, volume, delta * VOLUME_STEP)
                     state_dirty = True
                     display_dirty = True
 
@@ -689,7 +678,7 @@ def main():
                     display_dirty = True
 
             # ── Stop/start switch ──
-            new_play = GPIO.input(STOP_START_PIN) == GPIO.HIGH
+            new_play = GPIO.input(STOP_START_PIN) == GPIO.LOW
             if new_play != play_enabled:
                 play_enabled = new_play
                 if play_enabled:
