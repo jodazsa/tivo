@@ -6,7 +6,7 @@
 |-----------|------|-----------|---------|
 | **Station selector** | BCD rotary switch (10-position) | GPIO (active LOW) | Cycles through flat station list |
 | **Volume control** | BCD rotary switch (10-position) | GPIO (active LOW) | 10 volume levels (30%-100%) |
-| **OLED display** | SSD1306 128x32 mono | I2C at 0x3D | Shows station name + volume |
+| **OLED display** | SSD1306 128x32 mono | I2C at 0x3C | Shows station name + volume |
 | **Play/stop toggle** | Toggle switch | GPIO 24 (active HIGH) | ON=play, OFF=stop |
 | **DAC** | HiFiBerry DAC | I2S | Audio output |
 
@@ -84,7 +84,7 @@ After reboot, SSH back in and check:
 sudo systemctl status radio
 
 # Can you see the OLED display on I2C?
-i2cdetect -y 1    # Should show device at 0x3d
+i2cdetect -y 1    # Should show device at 0x3c
 
 # Is MPD running?
 mpc status
@@ -204,7 +204,7 @@ mpc update
 |----------|---|---|---|---|---|---|---|---|---|---|
 | Volume % | 30 | 38 | 46 | 54 | 62 | 70 | 78 | 86 | 93 | 100 |
 
-**OLED display**: I2C at address `0x3D` (Adafruit 4440, SSD1306 128x32)
+**OLED display**: I2C at address `0x3C` (Adafruit 4440, SSD1306 128x32)
 - SDA: GPIO 2
 - SCL: GPIO 3
 
@@ -231,12 +231,12 @@ python3 -c "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); GPIO.setup(9, GPIO.
 
 **OLED display not found:**
 ```bash
-i2cdetect -y 1   # Should show 0x3d
+i2cdetect -y 1   # Should show 0x3c
 ```
 
 **Display shows nothing:**
 - Check I2C wiring (SDA to GPIO 2, SCL to GPIO 3)
-- Verify address jumper on Adafruit 4440 (default 0x3D)
+- Verify address jumper on Adafruit 4440 (default 0x3C)
 
 **Service won't start:**
 ```bash
