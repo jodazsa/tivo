@@ -272,6 +272,11 @@ def update_display(display, station_index, station_name, volume, play_enabled):
     if display is None:
         return
     try:
+        if not play_enabled:
+            display.fill(0)
+            display.show()
+            return
+
         image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT))
         draw = ImageDraw.Draw(image)
 
@@ -290,9 +295,8 @@ def update_display(display, station_index, station_name, volume, play_enabled):
             display_name = "---"
         draw.text((0, 11), display_name, font=font, fill=255)
 
-        # Line 3: Volume + play state
-        state_str = "PLAY" if play_enabled else "STOP"
-        vol_str = f"Vol: {volume}%  {state_str}"
+        # Line 3: Volume
+        vol_str = f"Vol: {volume}%"
         draw.text((0, 22), vol_str, font=font, fill=255)
 
         display.image(image)
