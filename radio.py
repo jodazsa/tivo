@@ -47,7 +47,7 @@ VOLUME_PINS = {"bit0": 13, "bit1": 6, "bit2": 5, "bit3": 11}
 # Stop/start toggle switch
 STOP_START_PIN = 24
 # OLED display I2C address (Adafruit 4440, SSD1306 128x32)
-OLED_I2C_ADDR = 0x3D
+OLED_I2C_ADDR = 0x3C
 OLED_WIDTH = 128
 OLED_HEIGHT = 32
 
