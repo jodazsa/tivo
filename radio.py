@@ -381,12 +381,12 @@ def play_dir(path_str):
     mpc("repeat", "off")
     mpc("single", "off")
     mpc("random", "off")
-    # Batch-add all files in a single subprocess call
-    file_list = "\n".join(_mpd_relpath(f) for f in files)
+    # Add all files via command-line arguments
+    rel_paths = [_mpd_relpath(f) for f in files]
     try:
         subprocess.run(
-            ["mpc", "add"],
-            input=file_list, text=True, timeout=30,
+            ["mpc", "add"] + rel_paths,
+            text=True, timeout=30,
             capture_output=True,
         )
     except Exception as e:
@@ -570,6 +570,17 @@ def main():
 
     # Station index into the flat list — wraps using modulo
     cur_station_index = raw_station_pos % num_stations
+
+    # Restore saved state if available (e.g. after power loss)
+    if saved_state is not None:
+        saved_volume = saved_state["volume"]
+        saved_station = saved_state["station"]
+        if 0 <= saved_station < num_stations:
+            cur_station_index = saved_station
+            log.info("Restored station %d from saved state", saved_station + 1)
+        if VOLUME_MIN <= saved_volume <= VOLUME_MAX:
+            volume = saved_volume
+            log.info("Restored volume %d%% from saved state", saved_volume)
 
     playing_station_index = -1
     play_enabled = GPIO.input(STOP_START_PIN) == GPIO.HIGH

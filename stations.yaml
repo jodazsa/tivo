@@ -293,7 +293,7 @@ stations:
     path: "tracks/001- Guided 20 min.mp3"
   - name: "Sitting Meditation 20 Min"
     type: file_once
-    path: "tracks/2-02 Sitting Medidation - 20 Minutes.mp3"
+    path: "tracks/2-02 Sitting Meditation - 20 Minutes.mp3"
   - name: "Mountain"
     type: file_once
     path: "tracks/2-07 Mountain.mp3"
