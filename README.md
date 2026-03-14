@@ -11,7 +11,7 @@ A station selector knob, a volume knob, a play/stop toggle, and a 128x32 OLED di
 | Station selector | BCD rotary switch (10-position) | GPIO 9, 10, 22, 17 |
 | Volume control | BCD rotary switch (10-position) | GPIO 13, 6, 5, 11 |
 | Play/stop toggle | Toggle switch | GPIO 24 |
-| OLED display | SSD1306 128x32 | I2C at 0x3D |
+| OLED display | SSD1306 128x32 | I2C at 0x3C |
 | DAC | HiFiBerry DAC | I2S |
 
 ## Files
@@ -93,7 +93,7 @@ SSH back in and check:
 
 ```bash
 sudo systemctl status radio       # Service running?
-i2cdetect -y 1                    # OLED at 0x3d?
+i2cdetect -y 1                    # OLED at 0x3c?
 mpc status                        # MPD running?
 sudo journalctl -u radio -f       # Live logs
 ```
@@ -249,7 +249,7 @@ One command:
 Or manually:
 
 ```bash
-cd ~/radio
+cd ~/tivo
 git pull --ff-only origin main
 ./install.sh
 sudo systemctl restart radio
@@ -284,7 +284,7 @@ mpc update
 |----------|---|---|---|---|---|---|---|---|---|---|
 | Volume % | 30 | 38 | 46 | 54 | 62 | 70 | 78 | 86 | 93 | 100 |
 
-**OLED display** — I2C address `0x3D`, SDA on GPIO 2, SCL on GPIO 3.
+**OLED display** — I2C address `0x3C`, SDA on GPIO 2, SCL on GPIO 3.
 
 **Play/stop toggle** — GPIO 24. All switch pins use internal pull-ups (active LOW).
 
@@ -316,7 +316,7 @@ sudo systemctl restart mpd radio   # Restart everything
 
 **OLED display not found:**
 ```bash
-i2cdetect -y 1                    # Should show 0x3d
+i2cdetect -y 1                    # Should show 0x3c
 ```
 
 **Service won't start:**
