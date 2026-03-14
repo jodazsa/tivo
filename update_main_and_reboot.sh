@@ -2,7 +2,7 @@
 # update_main_and_reboot.sh — Pull latest main, run installer, and reboot
 set -euo pipefail
 
-REPO_DIR="${HOME}/radio"
+REPO_DIR="${HOME}/tivo"
 
 cd "$REPO_DIR"
 git fetch origin

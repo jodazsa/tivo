@@ -28,7 +28,7 @@ tivo/
 Use **Raspberry Pi Imager** to flash **Raspberry Pi OS Lite 64-bit (Bookworm)**.
 
 In Imager's advanced settings, configure:
-- Hostname (e.g. `radio`)
+- Hostname (e.g. `tivo`)
 - Username / password
 - WiFi credentials
 - Enable SSH
@@ -42,16 +42,16 @@ Option A — clone from a repo:
 cd ~
 sudo apt update
 sudo apt install -y git
-git clone https://github.com/jodazsa/radio.git
-cd radio
+git clone https://github.com/jodazsa/tivo.git
+cd tivo
 ```
 
 Option B — copy files manually:
 ```bash
 # From your computer:
-scp -r radio/ pi@radio.local:~/radio/
+scp -r tivo/ pi@tivo.local:~/tivo/
 # Then on the Pi:
-cd ~/radio
+cd ~/tivo
 ```
 
 ## Step 3: Run the installer
@@ -65,7 +65,7 @@ This will:
 1. Update system packages
 2. Enable I2C
 3. Install MPD, mpc, Python libraries (Blinka, SSD1306, Pillow)
-4. Create the `radio` user and directories
+4. Create the `pi` user audio directories
 5. Configure MPD and the HiFiBerry DAC
 6. Copy `radio.py` and `stations.yaml` into place
 7. Install and start the systemd service
@@ -98,7 +98,7 @@ Turn the station switch — you should hear audio, see log entries, and the OLED
 ## Step 5: Edit your stations
 
 ```bash
-sudo nano /home/radio/stations.yaml
+sudo nano /home/pi/stations.yaml
 ```
 
 Stations are a flat list. The station knob (positions 0-9) indexes into the list with wrapping. Reorder the list to put your favorites in the first 10 positions.
@@ -124,7 +124,7 @@ sudo systemctl restart radio
   type: file
   path: "ambient/rain.mp3"
 ```
-Paths are relative to `/home/radio/audio/`.
+Paths are relative to `/home/pi/audio/`.
 
 **file_once** — Single local audio file from the beginning, no repeat:
 ```yaml
@@ -145,7 +145,7 @@ Paths are relative to `/home/radio/audio/`.
 ### On your computer (local repo)
 
 ```bash
-cd ~/path/to/radio
+cd ~/path/to/tivo
 git add stations.yaml radio.py GUIDE.md
 git commit -m "Update stations and playback behavior"
 git push origin main
@@ -156,13 +156,13 @@ git push origin main
 One-command option (from anywhere):
 
 ```bash
-~/radio/update_main_and_reboot.sh
+~/tivo/update_main_and_reboot.sh
 ```
 
 Manual option:
 
 ```bash
-cd ~/radio
+cd ~/tivo
 git fetch origin
 git checkout main
 git pull --ff-only origin main
@@ -177,7 +177,7 @@ For a Windows-to-Pi path mapping guide that matches `stations.yaml`, see `TRANSF
 
 ```bash
 # From your computer, copy files to the Pi:
-scp -r "my-music/" radio@radio.local:/home/radio/audio/my-music/
+scp -r "my-music/" pi@tivo.local:/home/pi/audio/my-music/
 
 # On the Pi, tell MPD to scan for new files:
 mpc update
@@ -264,7 +264,7 @@ This radio is designed to survive unplanned power loss and run unattended for ye
 
 | Layer | What it does | Protects against |
 |-------|-------------|-----------------|
-| **State persistence** | Station index saved to `/home/radio/state.json` using atomic writes | Station reset after power loss |
+| **State persistence** | Station index saved to `/home/pi/state.json` using atomic writes | Station reset after power loss |
 | **Hardware watchdog** | `bcm2835_wdt` kernel module reboots the Pi if the OS hangs | Kernel panic, total system hang |
 | **Service watchdog** | systemd restarts radio.py if it stops sending keepalives (30s timeout) | Process hang, deadlock |
 | **Auto-restart** | `Restart=always` in systemd with rate limiting (10 restarts per 5 minutes) | Process crash, unexpected exit |
