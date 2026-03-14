@@ -64,15 +64,15 @@ echo "  Synced stations.yaml from repository"
 # 7. Configure ALSA default device to HiFiBerry DAC
 echo "→ Configuring ALSA default device..."
 sudo tee /etc/asound.conf > /dev/null << 'ASOUNDCONF'
-# Set HiFiBerry DAC as the default ALSA device
+# Set HiFiBerry DAC as the default ALSA device (by name, not card number)
 pcm.!default {
     type hw
-    card 0
+    card sndrpihifiberry
 }
 
 ctl.!default {
     type hw
-    card 0
+    card sndrpihifiberry
 }
 ASOUNDCONF
 
@@ -99,7 +99,7 @@ input {
 audio_output {
     type        "alsa"
     name        "HiFiBerry DAC"
-    device      "hw:0,0"
+    device      "hw:sndrpihifiberry,0"
     mixer_type  "software"
 }
 MPDCONF
