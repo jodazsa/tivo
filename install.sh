@@ -61,7 +61,22 @@ sudo cp "$SCRIPT_DIR/stations.yaml" /home/pi/stations.yaml
 sudo chown pi:pi /home/pi/stations.yaml
 echo "  Synced stations.yaml from repository"
 
-# 7. Configure MPD
+# 7. Configure ALSA default device to HiFiBerry DAC
+echo "→ Configuring ALSA default device..."
+sudo tee /etc/asound.conf > /dev/null << 'ASOUNDCONF'
+# Set HiFiBerry DAC as the default ALSA device
+pcm.!default {
+    type hw
+    card 0
+}
+
+ctl.!default {
+    type hw
+    card 0
+}
+ASOUNDCONF
+
+# 8. Configure MPD
 echo "→ Configuring MPD..."
 sudo tee /etc/mpd.conf > /dev/null << 'MPDCONF'
 music_directory     "/home/pi/audio"
@@ -84,6 +99,7 @@ input {
 audio_output {
     type        "alsa"
     name        "HiFiBerry DAC"
+    device      "hw:0,0"
     mixer_type  "software"
 }
 MPDCONF
@@ -91,7 +107,7 @@ MPDCONF
 sudo systemctl restart mpd
 sudo systemctl enable mpd
 
-# 8. Install systemd services
+# 9. Install systemd services
 echo "→ Installing radio services..."
 sudo cp "$SCRIPT_DIR/radio.service" /etc/systemd/system/radio.service
 sudo systemctl daemon-reload
