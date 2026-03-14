@@ -550,7 +550,7 @@ def main():
     cur_volume_pos = read_bcd(VOLUME_PINS)
     if cur_volume_pos > 9:
         cur_volume_pos = 0
-    volume = VOLUME_TABLE[cur_volume_pos]
+    volume = max(VOLUME_MIN, min(VOLUME_MAX, VOLUME_MIN + cur_volume_pos * VOLUME_STEP))
 
     raw_station_pos = read_bcd(STATION_PINS)
     if raw_station_pos > 9:
