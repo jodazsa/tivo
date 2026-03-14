@@ -33,11 +33,11 @@ from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
 
 # ── Paths ──────────────────────────────────────────────────
-STATIONS_PATH = Path("/home/radio/stations.yaml")
-AUDIO_ROOT = Path("/home/radio/audio")
+STATIONS_PATH = Path("/home/pi/stations.yaml")
+AUDIO_ROOT = Path("/home/pi/audio")
 AUDIO_EXTS = (".mp3", ".flac", ".ogg", ".m4a", ".wav", ".aac")
-STATE_PATH = Path("/home/radio/state.json")
-STATE_BACKUP_PATH = Path("/home/radio/state.backup.json")
+STATE_PATH = Path("/home/pi/state.json")
+STATE_BACKUP_PATH = Path("/home/pi/state.backup.json")
 
 # ── Hardware pin mappings ──────────────────────────────────
 # Station BCD switch

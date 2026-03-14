@@ -44,12 +44,12 @@ echo "→ Installing Python libraries..."
 sudo python3 -m venv /opt/radio-venv --system-site-packages
 sudo /opt/radio-venv/bin/pip install Adafruit-Blinka adafruit-circuitpython-ssd1306 Pillow
 
-# 5. Create radio user and directories
-echo "→ Setting up radio user..."
-id -u radio &>/dev/null || sudo useradd -m -s /bin/bash radio
-sudo usermod -aG audio,i2c,gpio radio
-sudo mkdir -p /home/radio/audio /home/radio/logs
-sudo chmod 755 /home/radio /home/radio/audio /home/radio/logs
+# 5. Set up pi user directories
+echo "→ Setting up pi user directories..."
+sudo usermod -aG audio,i2c,gpio pi
+sudo mkdir -p /home/pi/audio /home/pi/logs
+sudo chmod 755 /home/pi/audio /home/pi/logs
+sudo chown -R pi:pi /home/pi/audio /home/pi/logs
 
 # 6. Install radio files
 echo "→ Installing radio files..."
@@ -57,14 +57,14 @@ sudo cp "$SCRIPT_DIR/radio.py" /usr/local/bin/radio.py
 sudo chmod +x /usr/local/bin/radio.py
 
 # Always sync stations.yaml from the repo so Pi stations match GitHub main
-sudo cp "$SCRIPT_DIR/stations.yaml" /home/radio/stations.yaml
-sudo chown radio:radio /home/radio/stations.yaml
+sudo cp "$SCRIPT_DIR/stations.yaml" /home/pi/stations.yaml
+sudo chown pi:pi /home/pi/stations.yaml
 echo "  Synced stations.yaml from repository"
 
 # 7. Configure MPD
 echo "→ Configuring MPD..."
 sudo tee /etc/mpd.conf > /dev/null << 'MPDCONF'
-music_directory     "/home/radio/audio"
+music_directory     "/home/pi/audio"
 playlist_directory  "/var/lib/mpd/playlists"
 db_file             "/var/lib/mpd/tag_cache"
 log_file            "/var/log/mpd/mpd.log"

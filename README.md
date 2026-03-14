@@ -36,7 +36,7 @@ tivo/
 Use **Raspberry Pi Imager** to flash **Raspberry Pi OS Lite 64-bit (Bookworm)**.
 
 In Imager's advanced settings, configure:
-- Hostname (e.g. `radio`)
+- Hostname (e.g. `tivo`)
 - Username / password (e.g. `pi`)
 - WiFi credentials
 - Enable SSH
@@ -46,10 +46,10 @@ Insert the SD card and boot the Pi.
 ### 2. SSH into the Pi
 
 ```bash
-ssh pi@radio.local
+ssh pi@tivo.local
 ```
 
-If `radio.local` doesn't resolve, find the Pi's IP on your router and use that instead:
+If `tivo.local` doesn't resolve, find the Pi's IP on your router and use that instead:
 
 ```bash
 ssh pi@192.168.1.50
@@ -61,8 +61,8 @@ ssh pi@192.168.1.50
 cd ~
 sudo apt update
 sudo apt install -y git
-git clone https://github.com/jodazsa/radio.git
-cd radio
+git clone https://github.com/jodazsa/tivo.git
+cd tivo
 ```
 
 ### 4. Run the installer
@@ -76,7 +76,7 @@ This handles everything:
 - System packages (MPD, mpc, Python, I2C tools)
 - I2C and HiFiBerry DAC configuration
 - Python virtual environment with OLED display libraries
-- `radio` user and audio directories
+- `pi` user audio directories
 - MPD configuration
 - systemd service install and start
 - Power loss resilience hardening (watchdog, volatile journal, tmpfs, swap off, noatime)
@@ -104,14 +104,14 @@ Turn the station switch — you should hear audio and see the OLED update.
 
 ## Transferring music from Windows
 
-Local audio files go in `/home/radio/audio/` on the Pi. Paths in `stations.yaml` are relative to that directory (e.g. `shows/BobDylan` → `/home/radio/audio/shows/BobDylan`).
+Local audio files go in `/home/pi/audio/` on the Pi. Paths in `stations.yaml` are relative to that directory (e.g. `shows/BobDylan` → `/home/pi/audio/shows/BobDylan`).
 
 ### Prep the Pi (one time)
 
 ```bash
-ssh pi@radio.local
-sudo mkdir -p /home/radio/audio
-sudo chown -R pi:pi /home/radio/audio
+ssh pi@tivo.local
+sudo mkdir -p /home/pi/audio
+sudo chown -R pi:pi /home/pi/audio
 ```
 
 ### Using WSL + rsync (recommended)
@@ -128,7 +128,7 @@ sudo apt install -y rsync openssh-client
 **2. Make sure the destination exists on the Pi:**
 
 ```bash
-ssh pi@radio.local "sudo mkdir -p /home/radio/audio && sudo chown -R pi:pi /home/radio/audio"
+ssh pi@tivo.local "sudo mkdir -p /home/pi/audio && sudo chown -R pi:pi /home/pi/audio"
 ```
 
 **3. Run rsync:**
@@ -136,10 +136,10 @@ ssh pi@radio.local "sudo mkdir -p /home/radio/audio && sudo chown -R pi:pi /home
 ```bash
 rsync -avh --progress --partial --append-verify \
   /mnt/c/Users/J/Documents/Radio_Project/Sync/Audio/music/ \
-  pi@radio.local:/home/radio/audio/
+  pi@tivo.local:/home/pi/audio/
 ```
 
-The trailing `/` on `music/` is important — it copies the *contents* into `/home/radio/audio/` without creating an extra `music/` subfolder.
+The trailing `/` on `music/` is important — it copies the *contents* into `/home/pi/audio/` without creating an extra `music/` subfolder.
 
 Replace `/mnt/c/Users/J/Documents/Radio_Project/Sync/Audio/music/` with the WSL path to your audio folder. Windows paths map to WSL as `/mnt/c/...`.
 
@@ -148,7 +148,7 @@ Replace `/mnt/c/Users/J/Documents/Radio_Project/Sync/Audio/music/` with the WSL 
 **5. Refresh MPD's library:**
 
 ```bash
-ssh pi@radio.local "mpc update"
+ssh pi@tivo.local "mpc update"
 ```
 
 ### Using scp from PowerShell
@@ -156,13 +156,13 @@ ssh pi@radio.local "mpc update"
 If you don't have WSL, use scp from PowerShell:
 
 ```powershell
-scp -4 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@radio.local:/home/radio/audio/
+scp -4 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@tivo.local:/home/pi/audio/
 ```
 
 For large transfers, add keepalives to prevent timeouts:
 
 ```powershell
-scp -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@radio.local:/home/radio/audio/
+scp -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@tivo.local:/home/pi/audio/
 ```
 
 ### Path mapping
@@ -171,18 +171,18 @@ Your Windows audio folder structure should match what `stations.yaml` expects:
 
 ```
 Windows:  ...\Audio\music\shows\BobDylan\*.mp3
-Pi:       /home/radio/audio/shows/BobDylan/*.mp3
+Pi:       /home/pi/audio/shows/BobDylan/*.mp3
 stations.yaml path:    "shows/BobDylan"
 
 Windows:  ...\Audio\music\tracks\rain.mp3
-Pi:       /home/radio/audio/tracks/rain.mp3
+Pi:       /home/pi/audio/tracks/rain.mp3
 stations.yaml path:    "tracks/rain.mp3"
 ```
 
 ### Common mistakes
 
-- Copying `music/` into `/home/radio/audio/music/` (extra folder level, breaks paths)
-- Copying to `/home/pi/` instead of `/home/radio/audio/`
+- Copying `music/` into `/home/pi/audio/music/` (extra folder level, breaks paths)
+- Copying to `/home/pi/` instead of `/home/pi/audio/`
 - Forgetting quotes around paths with spaces
 - Forgetting `mpc update` after adding files
 
@@ -193,7 +193,7 @@ stations.yaml path:    "tracks/rain.mp3"
 Edit the station list:
 
 ```bash
-sudo nano /home/radio/stations.yaml
+sudo nano /home/pi/stations.yaml
 ```
 
 The station knob (positions 0–9) indexes into the flat list with wrapping. Put your favorites in the first 10 positions.
@@ -234,7 +234,7 @@ sudo systemctl restart radio
   path: "shows/BobDylan"
 ```
 
-Paths are relative to `/home/radio/audio/`.
+Paths are relative to `/home/pi/audio/`.
 
 ---
 
@@ -243,7 +243,7 @@ Paths are relative to `/home/radio/audio/`.
 One command:
 
 ```bash
-~/radio/update_main_and_reboot.sh
+~/tivo/update_main_and_reboot.sh
 ```
 
 Or manually:
@@ -297,7 +297,7 @@ The radio survives unplanned power loss and recovers automatically on boot. The 
 - **Hardware watchdog** — reboots Pi if the OS hangs
 - **Service watchdog** — restarts radio.py if it stops responding (30s timeout)
 - **Auto-restart** — systemd restarts on crash (up to 10 times per 5 minutes)
-- **State persistence** — station/volume saved to `/home/radio/state.json` with atomic writes
+- **State persistence** — station/volume saved to `/home/pi/state.json` with atomic writes
 - **Stream watchdog** — restarts dead streams after 15s grace period
 - **Config hot-reload** — `stations.yaml` changes detected every 30s
 - **SD card protection** — volatile journal, tmpfs, noatime, commit=60, swap disabled
