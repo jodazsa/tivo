@@ -1,9 +1,9 @@
 #!/bin/bash
-# install.sh — One-time setup for simplified Pi radio
+# install.sh — One-time setup for Pi radio with OLED display
 # Includes hardening for power loss resilience and long-term SD card reliability
 set -e
 
-echo "=== Simplified Pi Radio — Install ==="
+echo "=== Pi Radio with OLED Display — Install ==="
 echo ""
 
 if [ "$EUID" -eq 0 ]; then
@@ -39,10 +39,10 @@ if [ -n "$CONFIG_FILE" ]; then
     sudo sed -i 's/^dtparam=audio=on/#dtparam=audio=on/' "$CONFIG_FILE" 2>/dev/null || true
 fi
 
-# 4. Python libraries (Seesaw for I2C encoder) in a virtual environment
+# 4. Python libraries (OLED display + Pillow for text rendering) in a virtual environment
 echo "→ Installing Python libraries..."
 sudo python3 -m venv /opt/radio-venv --system-site-packages
-sudo /opt/radio-venv/bin/pip install Adafruit-Blinka adafruit-circuitpython-seesaw
+sudo /opt/radio-venv/bin/pip install Adafruit-Blinka adafruit-circuitpython-ssd1306 Pillow
 
 # 5. Create radio user and directories
 echo "→ Setting up radio user..."
