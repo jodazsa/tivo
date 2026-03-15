@@ -20,9 +20,10 @@ A station selector knob, a volume knob, a play/stop toggle, and a 128x32 OLED di
 tivo/
 ├── radio.py              ← The entire radio controller
 ├── stations.yaml         ← Station definitions (edit this)
-├── install.sh            ← One-time Pi setup script
+├── install.sh            ← One-time Pi setup script (safe to re-run)
 ├── radio.service         ← systemd service
-├── update_main_and_reboot.sh  ← Pull + reinstall + reboot
+├── update_files.sh       ← Deploy radio.py + stations.yaml, restart service
+├── update_main_and_reboot.sh  ← Pull from GitHub + deploy + reboot
 ├── GUIDE.md              ← Detailed setup & wiring reference
 └── TRANSFER_GUIDE.md     ← Windows → Pi audio transfer guide
 ```
@@ -240,21 +241,61 @@ Paths are relative to `/home/pi/audio/`.
 
 ## Updating the Pi from GitHub
 
-One command:
+There are three ways to apply changes from the repo, depending on what changed.
+
+### Option 1 — Pull and reboot (recommended for most updates)
+
+Pulls the latest `main` branch, deploys `radio.py` and `stations.yaml`, and reboots:
 
 ```bash
 ~/tivo/update_main_and_reboot.sh
 ```
 
-Or manually:
+What it does:
+1. `git fetch origin` + `git checkout main` + `git pull --ff-only origin main`
+2. Copies `radio.py` → `/usr/local/bin/radio.py`
+3. Copies `stations.yaml` → `/home/pi/stations.yaml`
+4. Reloads systemd daemon and restarts the `radio` service
+5. Reboots the Pi
+
+Use this for code changes (`radio.py`) or station list changes (`stations.yaml`) where a clean reboot is acceptable.
+
+### Option 2 — Deploy files only (no git pull, no reboot)
+
+Deploys the local repo's `radio.py` and `stations.yaml` to the system and restarts the service, without touching git or rebooting:
+
+```bash
+cd ~/tivo
+./update_files.sh
+```
+
+What it does:
+1. Copies `radio.py` → `/usr/local/bin/radio.py`
+2. Copies `stations.yaml` → `/home/pi/stations.yaml`
+3. Reloads systemd daemon and restarts the `radio` service
+
+Use this when you've already pulled (or made local edits) and just want to push changes live without rebooting. Also useful when testing local changes before committing.
+
+### Option 3 — Full reinstall (for system-level changes)
+
+Re-runs the full installer after pulling from GitHub. Required when the update includes changes to system packages, the systemd service file, hardware configuration, or power loss hardening settings:
 
 ```bash
 cd ~/tivo
 git pull --ff-only origin main
 ./install.sh
-sudo systemctl restart radio
-mpc update
+sudo reboot
 ```
+
+Use this after any update that touches `install.sh`, `radio.service`, or Pi system configuration. The installer is safe to re-run on an already-configured Pi.
+
+### When to use which
+
+| What changed | Option |
+|---|---|
+| `radio.py` or `stations.yaml` only | Option 1 or 2 |
+| `install.sh`, `radio.service`, or system config | Option 3 |
+| Local edits, testing before commit | Option 2 |
 
 ---
 
