@@ -2,7 +2,7 @@
 #
 # Station types:
 #   stream    — Internet radio (requires url)
-#   file      — Single local audio file, loops (requires path, relative to /home/radio/audio/)
+#   file      — Single local audio file, loops (requires path, relative to /home/pi/audio/)
 #   dir       — All audio files in a directory (requires path, relative to /home/radio/audio/)
 #   file_once — Single local audio file from start, then stop (requires path)
 #
