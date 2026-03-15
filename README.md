@@ -24,6 +24,9 @@ tivo/
 ├── radio.service         ← systemd service
 ├── update_files.sh       ← Deploy radio.py + stations.yaml, restart service
 ├── update_main_and_reboot.sh  ← Pull from GitHub + deploy + reboot
+├── auto-update.sh        ← Auto-update script (runs daily via timer)
+├── radio-auto-update.service  ← systemd service for auto-update
+├── radio-auto-update.timer    ← systemd timer (daily at noon)
 ├── GUIDE.md              ← Detailed setup & wiring reference
 └── TRANSFER_GUIDE.md     ← Windows → Pi audio transfer guide
 ```
@@ -241,7 +244,29 @@ Paths are relative to `/home/pi/audio/`.
 
 ## Updating the Pi from GitHub
 
-There are three ways to apply changes from the repo, depending on what changed.
+### Automatic updates (no SSH needed)
+
+The Pi checks GitHub for updates every day at noon. If new commits are found on `main`, it pulls them and restarts the radio service automatically. No reboot, no SSH required — just push to `main` and the Pi picks it up at noon.
+
+Check the auto-update log:
+```bash
+sudo journalctl -u radio-auto-update -n 20 --no-pager
+```
+
+To trigger an update check manually:
+```bash
+sudo systemctl start radio-auto-update
+```
+
+To disable auto-updates:
+```bash
+sudo systemctl disable radio-auto-update.timer
+sudo systemctl stop radio-auto-update.timer
+```
+
+### Manual updates
+
+There are three ways to apply changes manually from the repo, depending on what changed.
 
 ### Option 1 — Pull and reboot (recommended for most updates)
 
@@ -343,6 +368,7 @@ The radio survives unplanned power loss and recovers automatically on boot. The 
 - **Config hot-reload** — `stations.yaml` changes detected every 30s
 - **SD card protection** — volatile journal, tmpfs, noatime, commit=60, swap disabled
 - **Daily filesystem health check** — early warning of SD card failure
+- **Auto-update from GitHub** — checks daily at noon, deploys changes without reboot
 
 ---
 
