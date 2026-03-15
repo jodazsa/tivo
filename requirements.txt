@@ -1,0 +1,10 @@
+# Pi Radio — Python dependencies
+# Install: pip install -r requirements.txt
+# Note: RPi.GPIO and PyYAML are typically available as system packages
+# (python3-rpi.gpio, python3-yaml) and included via --system-site-packages
+
+Adafruit-Blinka
+adafruit-circuitpython-ssd1306
+Pillow
+PyYAML
+RPi.GPIO

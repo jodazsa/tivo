@@ -66,6 +66,9 @@ STATE_SAVE_INTERVAL = 5.0 # Seconds between state file writes
 CONFIG_CHECK_INTERVAL = 30.0  # Seconds between stations.yaml mtime checks
 WATCHDOG_NOTIFY_INTERVAL = 10.0  # Seconds between systemd watchdog keepalives
 DISPLAY_UPDATE_INTERVAL = 0.5  # Seconds between OLED display refreshes
+SCROLL_SPEED = 0.15           # Seconds between scroll steps for long names
+SCROLL_PAUSE = 2.0            # Seconds to pause at start/end of scroll
+DISPLAY_MAX_CHARS = 21        # Max chars that fit on one OLED line
 
 # ── Logging ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -254,7 +257,30 @@ def load_stations():
     if not isinstance(stations, list):
         log.error("stations.yaml 'stations' key must be a list")
         return []
-    return stations
+    # Validate each station entry
+    valid = []
+    for i, s in enumerate(stations):
+        if not isinstance(s, dict):
+            log.warning("Station #%d: not a dict, skipping", i + 1)
+            continue
+        name = s.get("name")
+        stype = (s.get("type") or "").strip().lower()
+        if not name:
+            log.warning("Station #%d: missing 'name', skipping", i + 1)
+            continue
+        if stype not in ("stream", "file", "dir", "file_once", "single_file"):
+            log.warning("Station '%s': invalid type '%s', skipping", name, stype)
+            continue
+        if stype == "stream" and not s.get("url", "").strip():
+            log.warning("Station '%s': stream type missing 'url', skipping", name)
+            continue
+        if stype in ("file", "dir", "file_once", "single_file") and not (s.get("path") or s.get("file") or "").strip():
+            log.warning("Station '%s': %s type missing 'path', skipping", name, stype)
+            continue
+        valid.append(s)
+    if len(valid) < len(stations):
+        log.info("Loaded %d/%d valid stations (%d skipped)", len(valid), len(stations), len(stations) - len(valid))
+    return valid
 
 
 def clamp(val, lo, hi):
@@ -279,41 +305,106 @@ def init_display(i2c):
 _default_font = ImageFont.load_default()
 
 
+class ScrollState:
+    """Tracks horizontal scrolling state for long station names."""
+
+    def __init__(self):
+        self.text = ""
+        self.offset = 0
+        self.last_step = 0.0
+        self.paused_until = 0.0
+        self.direction = 1  # 1 = scrolling left, -1 = scrolling right
+
+    def reset(self, text: str):
+        self.text = text
+        self.offset = 0
+        self.direction = 1
+        self.last_step = 0.0
+        self.paused_until = time.monotonic() + SCROLL_PAUSE
+
+    def needs_scroll(self) -> bool:
+        return len(self.text) > DISPLAY_MAX_CHARS
+
+    def visible_text(self) -> str:
+        if not self.needs_scroll():
+            return self.text
+        return self.text[self.offset:self.offset + DISPLAY_MAX_CHARS]
+
+    def step(self, now: float) -> bool:
+        """Advance scroll by one character if it's time. Returns True if changed."""
+        if not self.needs_scroll():
+            return False
+        if now < self.paused_until:
+            return False
+        if now - self.last_step < SCROLL_SPEED:
+            return False
+
+        self.last_step = now
+        max_offset = len(self.text) - DISPLAY_MAX_CHARS
+
+        self.offset += self.direction
+        if self.offset >= max_offset:
+            self.offset = max_offset
+            self.direction = -1
+            self.paused_until = now + SCROLL_PAUSE
+        elif self.offset <= 0:
+            self.offset = 0
+            self.direction = 1
+            self.paused_until = now + SCROLL_PAUSE
+        return True
+
+
+_scroll = ScrollState()
+
+
 def update_display(display, station_index, station_name, volume, play_enabled):
     """Update the OLED display with station and volume info."""
     if display is None:
         return
     try:
+        image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT))
+        draw = ImageDraw.Draw(image)
+        font = _default_font
+
         if not play_enabled:
-            display.fill(0)
+            draw.text((0, 0), "Stopped", font=font, fill=255)
+            vol_str = f"Vol: {volume}%"
+            draw.text((0, 22), vol_str, font=font, fill=255)
+            display.image(image)
             display.show()
             return
 
-        image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT))
-        draw = ImageDraw.Draw(image)
-
-        font = _default_font
-
         # Line 1: Station number
-        station_num_str = f"Station {station_index + 1}"
-        draw.text((0, 0), station_num_str, font=font, fill=255)
+        draw.text((0, 0), f"Station {station_index + 1}", font=font, fill=255)
 
-        # Line 2: Station name (truncated if needed)
-        if station_name:
-            # Truncate long names to fit ~21 chars at default font size
-            display_name = station_name[:21]
-        else:
-            display_name = "---"
+        # Line 2: Station name (scrolls if longer than DISPLAY_MAX_CHARS)
+        if station_name and station_name != _scroll.text:
+            _scroll.reset(station_name)
+        display_name = _scroll.visible_text() if station_name else "---"
         draw.text((0, 11), display_name, font=font, fill=255)
 
         # Line 3: Volume
-        vol_str = f"Vol: {volume}%"
-        draw.text((0, 22), vol_str, font=font, fill=255)
+        draw.text((0, 22), f"Vol: {volume}%", font=font, fill=255)
 
         display.image(image)
         display.show()
     except Exception as e:
         log.warning("Display update failed: %s", e)
+
+
+def show_splash(display, message: str):
+    """Show a centered message on the OLED (e.g. during boot)."""
+    if display is None:
+        return
+    try:
+        image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT))
+        draw = ImageDraw.Draw(image)
+        font = _default_font
+        draw.text((0, 11), message, font=font, fill=255)
+        display.image(image)
+        display.show()
+    except Exception:
+        pass
 
 
 # ── Playback ───────────────────────────────────────────────
@@ -550,6 +641,7 @@ def main():
         sys.exit(1)
 
     display = init_display(i2c)
+    show_splash(display, "Starting up...")
 
     # ── Load saved state (survives power loss) ──
     saved_state = load_state()
@@ -747,8 +839,9 @@ def main():
                         else:
                             watchdog_stop_since = 0.0
 
-            # ── Update OLED display (throttled, only when changed) ──
-            if display_dirty and now - last_display_update >= DISPLAY_UPDATE_INTERVAL:
+            # ── Update OLED display (throttled, only when changed or scrolling) ──
+            scroll_ticked = _scroll.step(now)
+            if (display_dirty or scroll_ticked) and now - last_display_update >= DISPLAY_UPDATE_INTERVAL:
                 if num_stations > 0:
                     stn_name = stations_list[cur_station_index].get("name", "Unknown")
                 else:
