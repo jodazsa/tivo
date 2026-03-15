@@ -151,11 +151,12 @@ def _atomic_write_json(path: Path, payload: dict):
         raise
 
 
-def save_state(volume, station_index):
+def save_state(volume, station_index, play_enabled):
     """Atomically save state to disk and rotate a backup copy."""
     state = {
         "volume": volume,
         "station": station_index,
+        "play_enabled": bool(play_enabled),
         "timestamp": int(time.time()),
     }
     try:
@@ -183,6 +184,7 @@ def _validate_state(data):
     return {
         "volume": volume,
         "station": station,
+        "play_enabled": bool(data.get("play_enabled", True)),
         "timestamp": data.get("timestamp"),
     }
 
@@ -218,6 +220,9 @@ def mpc(*args):
             ["mpc"] + list(args),
             capture_output=True, text=True, timeout=10,
         )
+        if r.returncode != 0:
+            stderr = (r.stderr or "").strip()
+            log.warning("mpc %s failed (code %d): %s", " ".join(args), r.returncode, stderr)
         return r.stdout.strip()
     except Exception as e:
         log.warning("mpc %s failed: %s", " ".join(args), e)
@@ -239,8 +244,12 @@ def load_stations():
     if not STATIONS_PATH.exists():
         log.error("stations.yaml not found at %s", STATIONS_PATH)
         return []
-    with open(STATIONS_PATH) as f:
-        data = yaml.safe_load(f) or {}
+    try:
+        with open(STATIONS_PATH) as f:
+            data = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError) as e:
+        log.error("Failed to load stations.yaml: %s", e)
+        return []
     stations = data.get("stations", [])
     if not isinstance(stations, list):
         log.error("stations.yaml 'stations' key must be a list")
@@ -395,9 +404,13 @@ def play_dir(path_str):
 def _resolve_path(raw: str) -> Path:
     """Resolve a station path relative to AUDIO_ROOT."""
     raw = raw.strip()
-    if raw.startswith("/"):
-        return Path(raw)
-    return AUDIO_ROOT / raw
+    candidate = Path(raw) if raw.startswith("/") else AUDIO_ROOT / raw
+    try:
+        candidate.resolve().relative_to(AUDIO_ROOT.resolve())
+    except ValueError:
+        log.error("Rejected path outside audio root: %s", candidate)
+        return AUDIO_ROOT / "__invalid_path__"
+    return candidate
 
 
 def _mpd_relpath(path: Path) -> str:
@@ -406,7 +419,7 @@ def _mpd_relpath(path: Path) -> str:
         return str(path.resolve().relative_to(AUDIO_ROOT.resolve()))
     except ValueError:
         log.error("Path outside audio root: %s", path)
-        return str(path)
+        return ""
 
 
 def _seek_random():
@@ -563,6 +576,8 @@ def main():
     # Station index into the flat list — wraps using modulo
     cur_station_index = raw_station_pos % num_stations
 
+    play_enabled = GPIO.input(STOP_START_PIN) == GPIO.LOW
+
     # Restore saved state if available (e.g. after power loss)
     if saved_state is not None:
         saved_volume = saved_state["volume"]
@@ -573,9 +588,9 @@ def main():
         if VOLUME_MIN <= saved_volume <= VOLUME_MAX:
             volume = saved_volume
             log.info("Restored volume %d%% from saved state", saved_volume)
+        play_enabled = saved_state.get("play_enabled", play_enabled)
 
     playing_station_index = -1
-    play_enabled = GPIO.input(STOP_START_PIN) == GPIO.LOW
     last_station_switch_change = 0.0
     last_volume_switch_change = 0.0
 
@@ -630,15 +645,20 @@ def main():
                 try:
                     mt = STATIONS_PATH.stat().st_mtime
                     if mt != stations_mtime:
-                        stations_list = load_stations()
-                        num_stations = len(stations_list)
-                        stations_mtime = mt
-                        log.info("Reloaded stations.yaml (%d stations)", num_stations)
-                        mpc("update")
-                        # Clamp station index to new list size
-                        if num_stations > 0:
+                        new_stations = load_stations()
+                        if new_stations:
+                            stations_list = new_stations
+                            num_stations = len(stations_list)
+                            stations_mtime = mt
+                            log.info("Reloaded stations.yaml (%d stations)", num_stations)
+                            mpc("update")
+                            # Clamp station indices to new list size
                             cur_station_index = cur_station_index % num_stations
-                        display_dirty = True
+                            if playing_station_index >= num_stations:
+                                playing_station_index = cur_station_index
+                            display_dirty = True
+                        else:
+                            log.warning("Ignoring stations.yaml reload due to invalid/empty station list")
                 except FileNotFoundError:
                     pass
 
@@ -671,6 +691,7 @@ def main():
                         log.info("Station: %d → %d (knob pos %d)",
                                  cur_station_index + 1, new_station_index + 1, raw_station_pos)
                         cur_station_index = new_station_index
+                        state_dirty = True
 
                     # Play new station if it differs from what's currently playing
                     if play_enabled and num_stations > 0:
@@ -693,6 +714,7 @@ def main():
                 else:
                     log.info("Stop/start switch → OFF")
                     mpc("stop")
+                state_dirty = True
                 display_dirty = True
 
             # ── Stream watchdog ──
@@ -726,7 +748,7 @@ def main():
 
             # ── Save state to disk (throttled, only when changed) ──
             if state_dirty and now - last_state_save >= STATE_SAVE_INTERVAL:
-                save_state(volume, playing_station_index)
+                save_state(volume, cur_station_index, play_enabled)
                 last_state_save = now
                 state_dirty = False
 
@@ -743,7 +765,7 @@ def main():
 
     # ── Graceful shutdown ──
     log.info("Shutting down gracefully")
-    save_state(volume, playing_station_index)
+    save_state(volume, cur_station_index, play_enabled)
     if display:
         try:
             display.fill(0)
