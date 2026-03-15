@@ -243,6 +243,16 @@ Paths are relative to `/home/pi/audio/`.
 
 There are three ways to apply changes from the repo, depending on what changed.
 
+### First time only — make the scripts executable
+
+After cloning, the scripts won't run until you mark them executable:
+
+```bash
+chmod +x ~/tivo/update_main_and_reboot.sh ~/tivo/update_files.sh
+```
+
+You only need to do this once. If you see `Permission denied` when running either script, this is why.
+
 ### Option 1 — Pull and reboot (recommended for most updates)
 
 Pulls the latest `main` branch, deploys `radio.py` and `stations.yaml`, and reboots:
