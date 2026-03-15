@@ -42,7 +42,7 @@ sudo chown -R pi:pi /home/pi/audio
 If `tivo.local` is flaky, use your Pi IP instead:
 
 ```bash
-ssh pi@192.168.1.50
+ssh pi@192.168.4.24
 ```
 
 ## Option A (recommended): copy everything in one command
@@ -58,7 +58,7 @@ scp -4 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@tivo.local:
 If `tivo.local` does not resolve reliably, replace it with your Pi IP:
 
 ```powershell
-scp -4 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@192.168.1.50:/home/pi/audio/
+scp -4 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\*" pi@192.168.4.24:/home/pi/audio/
 ```
 
 ## Option B: copy only specific items
@@ -132,6 +132,45 @@ mpc update
 
 ## Fixes for the exact errors you saw
 
+### Error: `Connection timed out` (port 22)
+
+This means the Pi is unreachable at the network level — SSH never got through.
+
+Diagnose in order:
+
+1. **Check if the Pi is on the network at all:**
+   ```bash
+   ping -c 4 192.168.4.24
+   ```
+   No reply → Pi is powered off, crashed, or booting. Wait and retry.
+
+2. **Find the Pi if its IP changed (DHCP):**
+   ```bash
+   # From WSL:
+   arp -a | grep -i raspberry
+   # or scan the subnet:
+   nmap -sn 192.168.4.0/24
+   ```
+   Use whatever IP responds, or assign a static IP on the Pi.
+
+3. **Try the hostname instead of the IP:**
+   ```bash
+   ssh -4 pi@tivo.local
+   ```
+
+4. **Check SSH is running on the Pi** (if you can reach it via another method):
+   ```bash
+   sudo systemctl status ssh
+   sudo systemctl enable --now ssh
+   ```
+
+5. **Retry rsync using the correct reachable address:**
+   ```bash
+   rsync -avh --progress --partial --append-verify \
+     /mnt/c/Users/J/Documents/Radio_Project/Sync/Audio/music/ \
+     pi@tivo.local:/home/pi/audio/
+   ```
+
 ### Error: `Connection closed by ... port 22`
 
 Usually DNS/IPv6/network instability. Try:
@@ -142,7 +181,7 @@ Usually DNS/IPv6/network instability. Try:
    ```
 2. If that fails, use IP instead of mDNS name:
    ```powershell
-   ssh -4 pi@192.168.1.50
+   ssh -4 pi@192.168.4.24
    ```
 3. Re-run `scp` with `-4` and the same host form that worked for SSH.
 
@@ -175,7 +214,7 @@ Try these fixes (in order):
    ```
 3. If it still drops, use Pi IP instead of `tivo.local`:
    ```powershell
-   scp -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\tracks\*" pi@192.168.1.50:/home/pi/audio/tracks/
+   scp -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -r "C:\Users\J\Documents\Radio_Project\Sync\Audio\music\tracks\*" pi@192.168.4.24:/home/pi/audio/tracks/
    ```
 4. Re-run the same command; files that already finished will be skipped/overwritten quickly, and remaining files continue.
 
