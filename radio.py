@@ -672,6 +672,10 @@ def main():
                 if now - last_volume_switch_change >= DEBOUNCE_TIME:
                     last_volume_switch_change = now
                     delta = new_vol_pos - cur_volume_pos
+                    if delta > 5:
+                        delta -= 10
+                    elif delta < -5:
+                        delta += 10
                     cur_volume_pos = new_vol_pos
                     volume = max(VOLUME_MIN, min(VOLUME_MAX, volume + delta * VOLUME_STEP))
                     mpc("volume", str(volume))
@@ -686,9 +690,14 @@ def main():
             if new_station_pos != raw_station_pos:
                 if now - last_station_switch_change >= DEBOUNCE_TIME:
                     last_station_switch_change = now
+                    delta = new_station_pos - raw_station_pos
+                    if delta > 5:
+                        delta -= 10
+                    elif delta < -5:
+                        delta += 10
                     raw_station_pos = new_station_pos
 
-                    new_station_index = raw_station_pos % num_stations if num_stations > 0 else 0
+                    new_station_index = (cur_station_index + delta) % num_stations if num_stations > 0 else 0
                     if new_station_index != cur_station_index:
                         log.info("Station: %d → %d (knob pos %d)",
                                  cur_station_index + 1, new_station_index + 1, raw_station_pos)
