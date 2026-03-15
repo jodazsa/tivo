@@ -276,6 +276,9 @@ def init_display(i2c):
         return None
 
 
+_default_font = ImageFont.load_default()
+
+
 def update_display(display, station_index, station_name, volume, play_enabled):
     """Update the OLED display with station and volume info."""
     if display is None:
@@ -289,8 +292,7 @@ def update_display(display, station_index, station_name, volume, play_enabled):
         image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT))
         draw = ImageDraw.Draw(image)
 
-        # Use default font
-        font = ImageFont.load_default()
+        font = _default_font
 
         # Line 1: Station number
         station_num_str = f"Station {station_index + 1}"
