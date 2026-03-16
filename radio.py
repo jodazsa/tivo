@@ -604,7 +604,7 @@ def main():
         play_station(stations_list[cur_station_index])
         playing_station_index = cur_station_index
     elif not play_enabled:
-        log.info("Stop/start switch is OFF at startup — stopped")
+        log.info("Sleep switch is OFF at startup — stopped")
         mpc("stop")
 
     log.info("Initial: station=%d/%d volume=%d (pos %d) play=%s",
@@ -713,18 +713,23 @@ def main():
                             state_dirty = True
                     display_dirty = True
 
-            # ── Stop/start switch ──
+            # ── Sleep switch ──
             new_play = GPIO.input(STOP_START_PIN) == GPIO.LOW
             if new_play != play_enabled:
                 play_enabled = new_play
                 if play_enabled:
-                    log.info("Stop/start switch → ON")
+                    log.info("Sleep switch → wake")
                     if num_stations > 0:
-                        play_station(stations_list[cur_station_index])
-                        playing_station_index = cur_station_index
+                        # Resume from pause if possible, otherwise start fresh
+                        status = mpc("status")
+                        if "[paused]" in status:
+                            mpc("play")
+                        else:
+                            play_station(stations_list[cur_station_index])
+                            playing_station_index = cur_station_index
                 else:
-                    log.info("Stop/start switch → OFF")
-                    mpc("stop")
+                    log.info("Sleep switch → sleep")
+                    mpc("pause")
                 state_dirty = True
                 display_dirty = True
 
