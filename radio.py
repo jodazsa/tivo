@@ -52,10 +52,10 @@ OLED_WIDTH = 128
 OLED_HEIGHT = 32
 
 # ── Volume mapping ────────────────────────────────────────
-VOLUME_MIN = 30
+VOLUME_MIN = 5
 VOLUME_MAX = 100
-DEFAULT_VOLUME = 62
-VOLUME_STEP = 5  # Each knob position change increments/decrements by this amount
+DEFAULT_VOLUME = 25
+VOLUME_STEP = 4  # Each knob position change increments/decrements by this amount
 
 # ── Tuning ─────────────────────────────────────────────────
 POLL_INTERVAL = 0.1       # Main loop sleep (seconds)
