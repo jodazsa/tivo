@@ -62,6 +62,9 @@ stations:
   - name: "KEXP Seattle 90.3 FM"
     type: stream
     url: "https://kexp-mp3-128.streamguys1.com/kexp128.mp3"
+  - name: "KCRW Santa Monica College"
+    type: stream
+    url: "https://streams.kcrw.com/kcrw_mp3"
   - name: "SoCal Sound 88.5 FM"
     type: stream
     url: "https://www.streamvortex.com:8444/s/12200/"
