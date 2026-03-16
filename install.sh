@@ -15,14 +15,33 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 1. System packages
 echo "→ Updating system and installing packages..."
-sudo apt update && sudo apt upgrade -y
+# Preserve existing config files during upgrade (prevents apt from replacing
+# wpa_supplicant.conf, dhcpcd.conf, NetworkManager.conf, etc. with defaults,
+# which would wipe WiFi credentials and break connectivity after reboot).
+sudo DEBIAN_FRONTEND=noninteractive apt update
+sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold"
 sudo apt install -y mpd mpc python3-pip python3-venv python3-yaml python3-rpi.gpio i2c-tools
 
-# 2. Enable I2C
+# 2. Ensure WiFi remains functional after package upgrades
+echo "→ Preserving WiFi configuration after upgrade..."
+
+# NetworkManager (Bookworm): connection profiles must be owned root:root, mode 600.
+# Newer NM versions enforce this strictly and silently skip files with wrong perms.
+if [ -d /etc/NetworkManager/system-connections ]; then
+    sudo chown root:root /etc/NetworkManager/system-connections/* 2>/dev/null || true
+    sudo chmod 600 /etc/NetworkManager/system-connections/* 2>/dev/null || true
+fi
+
+# Unblock WiFi in case a package upgrade left it soft-blocked
+sudo rfkill unblock wifi 2>/dev/null || true
+
+# 3. Enable I2C
 echo "→ Enabling I2C..."
 sudo raspi-config nonint do_i2c 0
 
-# 3. HiFiBerry DAC
+# 4. HiFiBerry DAC
 echo "→ Configuring HiFiBerry DAC..."
 if [ -f /boot/firmware/config.txt ]; then
     CONFIG_FILE="/boot/firmware/config.txt"
