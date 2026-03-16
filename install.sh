@@ -114,6 +114,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable radio
 sudo systemctl start radio
 
+# 10. Install auto-update timer (checks GitHub daily at noon)
+echo "→ Installing auto-update timer..."
+sudo cp "$SCRIPT_DIR/auto-update.sh" /home/pi/tivo/auto-update.sh 2>/dev/null || true
+sudo cp "$SCRIPT_DIR/radio-auto-update.service" /etc/systemd/system/radio-auto-update.service
+sudo cp "$SCRIPT_DIR/radio-auto-update.timer" /etc/systemd/system/radio-auto-update.timer
+sudo systemctl daemon-reload
+sudo systemctl enable radio-auto-update.timer
+sudo systemctl start radio-auto-update.timer
+
 # ── 9. Power loss resilience hardening ─────────────────────
 echo ""
 echo "→ Applying power loss resilience hardening..."
@@ -217,3 +226,4 @@ echo "  ✓ Reduced SD card writes (noatime, commit=60)"
 echo "  ✓ Swap disabled"
 echo "  ✓ Automatic service restart on crash"
 echo "  ✓ Daily filesystem health check"
+echo "  ✓ Auto-update from GitHub daily at noon"
